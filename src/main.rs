@@ -101,9 +101,17 @@ async fn main() -> Result<()> {
     let all_sorted = Resolver::sort_by_similarity(matches);
 
     // Filter: Only show papers that are Open Access AND have a PDF URL
-    let sorted_matches: Vec<_> = all_sorted.into_iter()
-        .filter(|(p, _)| p.is_oa && p.pdf_url.is_some())
-        .collect();
+    let (sorted_matches, unavailable_matches): (Vec<_>, Vec<_>) = all_sorted.into_iter()
+        .partition(|(p, _)| p.is_oa && p.pdf_url.is_some());
+
+    // Save unavailable papers
+    if !unavailable_matches.is_empty() {
+        let unavailable_papers: Vec<_> = unavailable_matches.into_iter().map(|(p, _)| p).collect();
+        let downloader = crate::layers::download::Downloader::new(download_dir.clone());
+        if let Err(e) = downloader.save_unavailable(&query, unavailable_papers).await {
+            tracing::warn!("Failed to save unavailable papers: {}", e);
+        }
+    }
     
     if sorted_matches.is_empty() {
         tracing::warn!("No downloadable (Open Access + PDF) matches found within threshold {}.", args.threshold);

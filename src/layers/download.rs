@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use reqwest::Client;
 use std::path::{PathBuf};
-use tokio::fs::{create_dir_all, File};
+use tokio::fs::{self, create_dir_all, File};
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
 use crate::layers::PaperMetadata;
 use serde::{Deserialize, Serialize};
@@ -116,6 +116,81 @@ impl Downloader {
         let mut file = File::create(&manifest_path).await?;
         file.write_all(json.as_bytes()).await?;
         tracing::info!("Updated manifest at: {:?}", manifest_path);
+
+        Ok(())
+    }
+
+    pub async fn save_unavailable(&self, query: &crate::layers::DiscoveryQuery, papers: Vec<PaperMetadata>) -> Result<()> {
+        if papers.is_empty() {
+            return Ok(());
+        }
+
+        let path = self.base_dir.join("unavailable.json");
+        let mut root: serde_json::Value = if path.exists() {
+            let content = fs::read_to_string(&path).await?;
+            serde_json::from_str(&content).unwrap_or(serde_json::Value::Object(serde_json::Map::new()))
+        } else {
+            serde_json::Value::Object(serde_json::Map::new())
+        };
+
+        // Determine nesting keys based on priority
+        let mut keys = Vec::new();
+        if let Some(u) = &query.university { keys.push(u.clone()); }
+        if let Some(c) = &query.category { keys.push(c.clone()); }
+        if let Some(a) = &query.author { keys.push(a.clone()); }
+        if let Some(t) = &query.title { keys.push(t.clone()); }
+        
+        if keys.is_empty() {
+            keys.push("General_Search".to_string());
+        }
+
+        // Navigate/Build the structure
+        let mut current = &mut root;
+        for (i, key) in keys.iter().enumerate() {
+            // If we are at the last key, we want a List.
+            // If not, we want an Object.
+            let is_last = i == keys.len() - 1;
+
+            if !current.is_object() {
+                 // Should ideally not happen if structure matches, but safety reset if type mismatch
+                 *current = serde_json::Value::Object(serde_json::Map::new());
+            }
+            
+            if is_last {
+                 // Initialize list if not present or not an array
+                 if current.get(key).is_none() || !current[key].is_array() {
+                     current[key] = serde_json::Value::Array(Vec::new());
+                 }
+                 // Now we add our papers to this array
+                 if let Some(arr) = current[key].as_array_mut() {
+                     for p in &papers {
+                         // Simple check to avoid duplicates if possible, or just append
+                         // Converting to Value to compare/insert
+                         let p_val = serde_json::to_value(p)?;
+                         // Check if already exists (simple O(N) check)
+                         let exists = arr.iter().any(|existing| {
+                             existing["title"] == p_val["title"] 
+                             && existing["year"] == p_val["year"]
+                         });
+                         
+                         if !exists {
+                             arr.push(p_val);
+                         }
+                     }
+                 }
+            } else {
+                // Intermediate node -> Ensure it exists as Object
+                if current.get(key).is_none() {
+                    current.as_object_mut().unwrap().insert(key.clone(), serde_json::Value::Object(serde_json::Map::new()));
+                }
+                current = current.get_mut(key).unwrap();
+            }
+        }
+
+        let json = serde_json::to_string_pretty(&root)?;
+        let mut file = File::create(&path).await?;
+        file.write_all(json.as_bytes()).await?;
+        tracing::info!("Saved {} unavailable papers to unavailable.json", papers.len());
 
         Ok(())
     }
