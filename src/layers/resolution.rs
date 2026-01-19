@@ -25,3 +25,77 @@ impl Resolver {
         matches
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper to create a dummy PaperMetadata
+    fn create_dummy_paper(title: &str) -> PaperMetadata {
+        PaperMetadata {
+            title: title.to_string(),
+            authors: vec![],
+            year: None,
+            doi: None,
+            arxiv_id: None,
+            semantic_scholar_id: None,
+            open_alex_id: None,
+            venue: None,
+            abstract_text: None,
+            pdf_url: None,
+            is_oa: false,
+            categories: vec![],
+        }
+    }
+
+    #[test]
+    fn test_resolve_exact_match() {
+        let p1 = create_dummy_paper("Quantum Computing");
+        let p2 = create_dummy_paper("Introduction to ML");
+        let candidates = vec![p1.clone(), p2.clone()];
+
+        let results = Resolver::resolve("Quantum Computing", candidates, 5);
+        
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0.title, "Quantum Computing");
+        assert_eq!(results[0].1, 0); // Distance should be 0 for exact match
+    }
+
+    #[test]
+    fn test_resolve_fuzzy_match() {
+        let p1 = create_dummy_paper("Quantum Computing");
+        let candidates = vec![p1];
+
+        // "Quantumm Computin" -> Typo
+        let results = Resolver::resolve("Quantumm Computin", candidates, 5);
+        
+        assert_eq!(results.len(), 1);
+        assert!(results[0].1 > 0);
+        assert!(results[0].1 <= 5);
+    }
+
+    #[test]
+    fn test_resolve_no_match() {
+        let p1 = create_dummy_paper("Biology 101");
+        let candidates = vec![p1];
+
+        let results = Resolver::resolve("Quantum Mechanics", candidates, 2);
+        
+        assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn test_sort_by_similarity() {
+        let p1 = create_dummy_paper("A");
+        let p2 = create_dummy_paper("B");
+        
+        // Unsorted: dist 10 then dist 2
+        let matches = vec![(p1.clone(), 10), (p2.clone(), 2)];
+        
+        let sorted = Resolver::sort_by_similarity(matches);
+        
+        assert_eq!(sorted[0].1, 2);
+        assert_eq!(sorted[1].1, 10);
+        assert_eq!(sorted[0].0.title, "B");
+    }
+}
