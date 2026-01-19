@@ -23,13 +23,25 @@ A Rust-based tool for automated discovery, resolution, and downloading of open-a
 
 ## Usage
 
-Run the project using Cargo:
+Run the project using Cargo with flags for title, author, category, or university:
 
 ```bash
-cargo run
+# Search by title
+cargo run -- --title "Attention Is All You Need"
+
+# Search by author and category
+cargo run -- --author "Vaswani" --category "cs.CL"
+
+# View all options
+cargo run -- --help
 ```
 
-Currently, the search query is configured in `src/main.rs`. In the next version, this will be available via CLI arguments.
+### CLI Options
+- `-t, --title`: Title of the paper.
+- `-a, --author`: Author name.
+- `-c, --category`: Research category (e.g., `cs.AI`, `physics.gen-ph`).
+- `-u, --university`: University affiliation.
+- `--threshold`: Custom Levenshtein distance for fuzzy matching (default: 5).
 
 ## Download Options
 

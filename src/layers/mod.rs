@@ -19,6 +19,7 @@ pub struct PaperMetadata {
 pub struct DiscoveryQuery {
     pub title: Option<String>,
     pub author: Option<String>,
+    #[allow(dead_code)]
     pub university: Option<String>,
     pub category: Option<String>,
 }

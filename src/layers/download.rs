@@ -26,21 +26,29 @@ impl Downloader {
         let pdf_url = paper.pdf_url.as_ref()
             .ok_or_else(|| anyhow!("No PDF URL found for paper despite OA status."))?;
 
-        let paper_id = paper.doi.as_ref()
+        let raw_id = paper.doi.as_ref()
             .or(paper.arxiv_id.as_ref())
             .or(paper.semantic_scholar_id.as_ref())
-            .map(|s| s.replace('/', "_"))
-            .unwrap_or_else(|| "unknown_id".to_string());
+            .map(|s| s.as_str())
+            .unwrap_or("unknown_id");
+
+        // Sanitize ID: remove scheme, replace non-alphanumeric chars
+        let paper_id = raw_id.replace("http://", "")
+                             .replace("https://", "")
+                             .replace(|c: char| !c.is_alphanumeric() && c != '.' && c != '-', "_");
 
         let target_dir = self.base_dir.join(&paper_id);
         create_dir_all(&target_dir).await?;
 
         // Download PDF
         let pdf_path = target_dir.join("paper.pdf");
+        tracing::info!("Downloading PDF from: {}", pdf_url);
         let mut response = self.client.get(pdf_url).send().await?;
         
         if !response.status().is_success() {
-            return Err(anyhow!("Failed to download PDF: {}", response.status()));
+            let err = format!("Failed to download PDF: {}", response.status());
+            tracing::error!("{}", err);
+            return Err(anyhow!(err));
         }
 
         let mut file = File::create(&pdf_path).await?;
@@ -50,6 +58,7 @@ impl Downloader {
 
         // Save Metadata
         let metadata_path = target_dir.join("metadata.json");
+        tracing::info!("Saving metadata to: {:?}", metadata_path);
         let metadata_json = serde_json::to_string_pretty(paper)?;
         let mut meta_file = File::create(&metadata_path).await?;
         meta_file.write_all(metadata_json.as_bytes()).await?;
