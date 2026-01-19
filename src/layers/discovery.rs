@@ -85,6 +85,10 @@ impl SemanticScholarClient {
             query.push_str(uni);
             query.push(' ');
         }
+        if let Some(cat) = &query_params.category {
+            query.push_str(cat);
+            query.push(' ');
+        }
         
         let url = format!("https://api.semanticscholar.org/graph/v1/paper/search?query={}&fields=title,authors,year,venue,abstract,externalIds,isOpenAccess,openAccessPdf&limit={}", urlencoding::encode(query.trim()), query_params.limit);
         
@@ -143,7 +147,9 @@ impl ArxivClient {
         }
         if let Some(cat) = &query_params.category {
             if !query.is_empty() { query.push_str(" AND "); }
-            query.push_str(&format!("cat:\"{}\"", cat));
+            // 'cat' usually requires strict taxonomy (e.g. cs.CR). 
+            // Users tend to type keywords ("Cybersecurity"), so 'all' is safer.
+            query.push_str(&format!("all:\"{}\"", cat));
         }
         if let Some(uni) = &query_params.university {
             if !query.is_empty() { query.push_str(" AND "); }
@@ -362,7 +368,7 @@ impl OpenAlexClient {
             // Encode value but keep key and colon raw if possible, or handle carefully.
             // OpenAlex expects filter=key:value. 
             // We shouldn't encode the colon if possible, but we must encode the value.
-            filters.push(format!("institutions.display_name:{}", uni));
+            filters.push(format!("raw_affiliation_strings.search:{}", uni));
         }
 
         let mut search_parts = Vec::new();
@@ -371,6 +377,9 @@ impl OpenAlexClient {
         }
         if let Some(author) = &query_params.author {
              search_parts.push(author.clone());
+        }
+        if let Some(cat) = &query_params.category {
+             search_parts.push(cat.clone());
         }
 
         if !filters.is_empty() {

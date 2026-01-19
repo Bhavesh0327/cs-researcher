@@ -98,10 +98,15 @@ async fn main() -> Result<()> {
     tracing::info!("--- Step 2: Fuzzy Resolution ---");
     let search_title = args.title.as_deref().unwrap_or("");
     let matches = Resolver::resolve(search_title, results, args.threshold);
-    let sorted_matches = Resolver::sort_by_similarity(matches);
+    let all_sorted = Resolver::sort_by_similarity(matches);
+
+    // Filter: Only show papers that are Open Access AND have a PDF URL
+    let sorted_matches: Vec<_> = all_sorted.into_iter()
+        .filter(|(p, _)| p.is_oa && p.pdf_url.is_some())
+        .collect();
     
     if sorted_matches.is_empty() {
-        tracing::warn!("No close matches found within threshold {}.", args.threshold);
+        tracing::warn!("No downloadable (Open Access + PDF) matches found within threshold {}.", args.threshold);
         return Ok(());
     }
 
