@@ -2,8 +2,20 @@ use anyhow::{Result, anyhow};
 use reqwest::Client;
 use std::path::{PathBuf};
 use tokio::fs::{create_dir_all, File};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWriteExt, AsyncReadExt};
 use crate::layers::PaperMetadata;
+use serde::{Deserialize, Serialize};
+use chrono::Utc;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct ManifestEntry {
+    title: String,
+    first_author: String,
+    year: Option<u32>,
+    id: String,
+    relative_path: String,
+    downloaded_at: String,
+}
 
 pub struct Downloader {
     client: Client,
@@ -64,6 +76,47 @@ impl Downloader {
         let mut meta_file = File::create(&metadata_path).await?;
         meta_file.write_all(metadata_json.as_bytes()).await?;
 
+        // Update Manifest
+        self.update_manifest(paper, &paper_id, &pdf_path).await?;
+
         Ok(target_dir)
+    }
+
+    async fn update_manifest(&self, paper: &PaperMetadata, id: &str, pdf_path: &std::path::Path) -> Result<()> {
+        let manifest_path = self.base_dir.join("manifest.json");
+        let mut entries: Vec<ManifestEntry> = if manifest_path.exists() {
+            let mut file = File::open(&manifest_path).await?;
+            let mut content = String::new();
+            file.read_to_string(&mut content).await?;
+            serde_json::from_str(&content).unwrap_or_else(|_| Vec::new())
+        } else {
+            Vec::new()
+        };
+
+        let first_author = paper.authors.first().map(|s| s.as_str()).unwrap_or("Unknown").to_string();
+        let relative_path = pdf_path.strip_prefix(&self.base_dir)
+            .unwrap_or(pdf_path)
+            .to_string_lossy()
+            .into_owned();
+
+        let new_entry = ManifestEntry {
+            title: paper.title.clone(),
+            first_author,
+            year: paper.year,
+            id: id.to_string(),
+            relative_path,
+            downloaded_at: Utc::now().to_rfc3339(),
+        };
+
+        // Remove existing entry with same ID if exists (update)
+        entries.retain(|e| e.id != id);
+        entries.push(new_entry);
+
+        let json = serde_json::to_string_pretty(&entries)?;
+        let mut file = File::create(&manifest_path).await?;
+        file.write_all(json.as_bytes()).await?;
+        tracing::info!("Updated manifest at: {:?}", manifest_path);
+
+        Ok(())
     }
 }
